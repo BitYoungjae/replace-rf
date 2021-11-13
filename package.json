@@ -1,10 +1,31 @@
 {
-  "name": "replace--r",
-  "version": "0.0.0",
+  "name": "replace-r",
+  "version": "1.0.0",
+  "main": "dist/main.js",
+  "files": [
+    "dist/main.js"
+  ],
+  "type": "module",
+  "keywords": [
+    "cli",
+    "replace",
+    "replace all"
+  ],
+  "author": {
+    "name": "Youngjae Joo",
+    "email": "bityoungjae@gmail.com",
+    "url": "https://bityoungjae.com"
+  },
+  "engines": {
+    "node": ">=15.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BitYoungjae/replace-r.git"
+  },
+  "license": "MIT",
   "scripts": {
-    "swc-build": "swc ./src -d dist",
-    "emit-ts-declaration": "tsc",
-    "build": "yarn swc-build && yarn emit-ts-declaration",
+    "build": "swc ./src -d dist",
     "start": "yarn swc-build && node ./dist/main.js"
   },
   "devDependencies": {
@@ -21,6 +42,7 @@
   },
   "dependencies": {
     "chalk": "^4.1.2",
+    "cli-spinners": "^2.6.1",
     "commander": "^8.3.0",
     "ora": "^6.0.1"
   }
