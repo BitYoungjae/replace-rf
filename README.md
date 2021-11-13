@@ -10,7 +10,7 @@ Shell script가 익숙하다면 사실 별 효용성이 없다.
 2. **--ext** : ts 확장자를 가지는 모든 파일들에 대하여 
 3. **--keys** : `aatman`, `arazil`, `aonus`를 찾은 뒤
 4. **--from** : `a`를 
-5. **-to** : `b`로 일괄 변경하라.
+5. **--to** : `b`로 일괄 변경하라.
 
 ```shell
 npx replace-rf --dir ./src --ext ts --from a --to b --keys aatman arazil aonus
