@@ -1,6 +1,6 @@
 {
   "name": "replace-rf",
-  "version": "1.0.0",
+  "version": "1.0.0-alpha",
   "main": "dist/main.js",
   "files": [
     "dist/main.js"
