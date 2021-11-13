@@ -1,0 +1,51 @@
+name: CD
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  pre-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{github.event.release.target_commitish}}
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+      - name: Install dependencies
+        run: yarn --frozen-lockfile
+      - name: eslint
+        run: yarn eslint ./src
+      - name: Type check
+        run: yarn tsc
+  build-and-publish:
+    needs: pre-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{github.event.release.target_commitish}}
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          registry-url: https://registry.npmjs.org
+      - name: Set cd-bot git configuration
+        run: |
+          git config --global user.name "cd-bot"
+          git config --global user.eamil "bityoungjae@gmail.com"
+      - name: Install dependencies
+        run: yarn --frozen-lockfile
+      - name: Build package
+        run: |
+          npm version ${{github.event.release.tag_name}}
+          yarn build
+      - name: Publish package to npm
+        run : npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_PUBLISH_TOKEN}}
+      - name: Push new version to master
+        run: git push
+        env:
+          github-token: ${{secrets.GITHUB_TOKEN}}
