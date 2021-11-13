@@ -9,7 +9,7 @@ import ora from 'ora';
 import cliSpinners from 'cli-spinners';
 import { getPathNames } from 'esm-pathnames';
 
-const spinner = ora({ spinner: cliSpinners.material });
+const spinner = ora({ spinner: cliSpinners.material, stream: process.stdout });
 
 const chalkError = chalk.red.bold;
 const chalkSuccess = chalk.green;
