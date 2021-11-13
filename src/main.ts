@@ -229,8 +229,8 @@ const checkConversionResult = (result: PromiseSettledResult<boolean>[]) => {
   } catch (e) {
     spinner.fail(chalkError((e as Error).message));
     console.error(e);
-    spinner.succeed(chalkSuccess(`Buffer cleared`));
   }
 
   await clearBuffer();
+  spinner.succeed(chalkSuccess(`Buffer cleared`));
 })();
