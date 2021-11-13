@@ -528,6 +528,11 @@ eslint@^8.2.0:
     text-table "^0.2.0"
     v8-compile-cache "^2.0.3"
 
+esm-pathnames@^1.0.15:
+  version "1.0.15"
+  resolved "https://registry.yarnpkg.com/esm-pathnames/-/esm-pathnames-1.0.15.tgz#f8c82d0dcbef55c179cae02c09cefc3e14203d1c"
+  integrity sha512-2b0Zh6KHks4bnd0w0NYBKOIpe64bYXM8exbyuhhtU+oqIXOmbvDy4BjyfzuH0/QNWRVOytq86QCRlsXLgE21Zw==
+
 espree@^9.0.0:
   version "9.0.0"
   resolved "https://registry.yarnpkg.com/espree/-/espree-9.0.0.tgz#e90a2965698228502e771c7a58489b1a9d107090"

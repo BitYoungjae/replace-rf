@@ -5,6 +5,9 @@
   "files": [
     "dist/main.js"
   ],
+  "bin": {
+    "replace-rf": "dist/main.js"
+  },
   "type": "module",
   "keywords": [
     "cli",
@@ -26,7 +29,7 @@
   "license": "MIT",
   "scripts": {
     "build": "swc ./src -d dist",
-    "start": "yarn swc-build && node ./dist/main.js"
+    "start": "yarn build && node ./dist/main.js"
   },
   "devDependencies": {
     "@swc/cli": "^0.1.51",
@@ -44,6 +47,7 @@
     "chalk": "^4.1.2",
     "cli-spinners": "^2.6.1",
     "commander": "^8.3.0",
+    "esm-pathnames": "^1.0.15",
     "ora": "^6.0.1"
   }
 }

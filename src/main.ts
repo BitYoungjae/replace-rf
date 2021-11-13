@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import fsOrigin, { Dirent, promises as fs } from 'fs';
 import path from 'path';
 import process from 'process';
@@ -5,6 +7,7 @@ import { program } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import cliSpinners from 'cli-spinners';
+import { getPathNames } from 'esm-pathnames';
 
 const spinner = ora({ spinner: cliSpinners.material });
 
@@ -80,6 +83,8 @@ interface IPackageInfo {
 }
 
 const readPackageInfo = (): IPackageInfo => {
+  const { __dirname } = getPathNames(import.meta);
+
   try {
     const fileContent = fsOrigin.readFileSync(
       path.resolve(__dirname, '../package.json'),
