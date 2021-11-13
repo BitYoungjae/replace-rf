@@ -49,29 +49,31 @@ const initBuffer = async () => {
   }
 };
 
-const writeBuffer = async (originFilePath: string, data: string) => {
-  if (!path.isAbsolute(originFilePath)) {
-    const bufferPath = path.resolve(BUFFER_PATH, originFilePath);
-    if (!(await checkFileExist(path.dirname(bufferPath)))) {
-      await fs.mkdir(path.dirname(bufferPath), { recursive: true });
-    }
-
-    await fs.writeFile(bufferPath, data, { flag: 'wx' });
-
-    return true;
+const writeBuffer = async (bufferPath: string, data: string) => {
+  if (!(await checkFileExist(path.dirname(bufferPath)))) {
+    await fs.mkdir(path.dirname(bufferPath), { recursive: true });
   }
 
-  throw new Error(
-    `originFilePath must be a relative path. (${originFilePath})`,
-  );
+  return await fs.writeFile(bufferPath, data, { flag: 'w' });
 };
 
-const replaceOriginWithBuffer = async (originPath: string) => {
+const getBufferPath = (rootDir: string, originFilePath: string) => {
+  const relativePath = path.relative(rootDir, originFilePath);
+  return path.resolve(BUFFER_PATH, relativePath);
+};
+
+const replaceOriginWithBuffer = async (originalPath: string) => {
   try {
-    await fs.cp(BUFFER_PATH, originPath, {
-      recursive: true,
-      force: true,
-    });
+    // 둘 다 성능은 비슷한 것 같은데, 후자쪽이 보조디스크 낭비가 덜할 것 같았다.
+    // await fs.cp(BUFFER_PATH, originalPath, {
+    //   recursive: true,
+    //   force: true,
+    // });
+
+    for await (const filePath of getFilePaths(BUFFER_PATH)) {
+      const relativePath = path.relative(BUFFER_PATH, filePath);
+      await fs.rename(filePath, path.resolve(originalPath, relativePath));
+    }
   } catch {
     throw new Error('Failed to replace the original path with a buffer.');
   }
@@ -153,49 +155,135 @@ program
 
 const options = program.opts<IOptionValues>();
 
+const getFileContent = async (bufferPath: string, originalFilePath: string) => {
+  let derivedFilePath: string = originalFilePath;
+
+  if (await checkFileExist(bufferPath)) {
+    derivedFilePath = bufferPath;
+  }
+
+  return (await fs.readFile(derivedFilePath)).toString();
+};
+
 const conversionFile = async (
-  spinnerUpdater: () => void,
   rootDir: string,
   filePath: string,
   keyRexp: RegExp,
   from: IOptionValues['from'],
   to: IOptionValues['to'],
 ) => {
-  const fileContent = (await fs.readFile(filePath)).toString();
+  const bufferPath = getBufferPath(rootDir, filePath);
+  const fileContent = await getFileContent(bufferPath, filePath);
   const conversioned = fileContent.replaceAll(keyRexp, (subStr) => {
     return subStr.replaceAll(from, to);
   });
 
-  const fileRelativePath = path.relative(rootDir, filePath);
-  await writeBuffer('./' + fileRelativePath, conversioned);
-  spinnerUpdater();
+  await writeBuffer(bufferPath, conversioned);
   return true;
 };
 
-const genKeyRexp = (keys: IOptionValues['keys']) => {
-  let regexpStr = keys[0];
+const partitionAll = <T>(n: number, coll: T[]): T[][] => {
+  if (n <= 0) {
+    throw new Error('invalid agument:' + n);
+  }
+  const result: T[][] = [];
+  let target = coll;
+  while (target.length > 0) {
+    result.push(target.slice(0, n));
+    target = target.slice(n);
+  }
+  return result;
+};
 
-  if (keys.length > 1) {
-    const sortedKeys = keys.sort((a, b) => b.length - a.length);
-    regexpStr = `(${sortedKeys.join('|')})`;
+const getPercent = (done: number, total: number) =>
+  `${Math.round((done / total) * 100)}%`;
+
+const conversionFiles = async (
+  rootDir: string,
+  keyRexp: RegExp,
+  from: string,
+  to: string,
+  filePaths: string[],
+) => {
+  return await Promise.allSettled(
+    filePaths.map(async (filePath) => {
+      const result = await conversionFile(rootDir, filePath, keyRexp, from, to);
+
+      return result;
+    }),
+  );
+};
+
+const genSpinnerUpdater = (total: number) => {
+  const status = { done: 0, total: total };
+
+  return (chunkSize: number) => {
+    status.done += chunkSize;
+    spinner.text = getPercent(status.done, status.total);
+  };
+};
+
+const conversionWithSingleKey = async (
+  options: IOptionValues,
+  filePaths: string[],
+) => {
+  const result: PromiseSettledResult<boolean>[] = [];
+  const { dir, keys, from, to } = options;
+  const spinnerUpdater = genSpinnerUpdater(filePaths.length);
+
+  spinnerUpdater(0);
+
+  const keyRexp = new RegExp(keys[0], 'g');
+  const fileChunks = partitionAll(CHUNK_COUNT, filePaths);
+
+  for (const chunk of fileChunks) {
+    const chunkResult = await conversionFiles(dir, keyRexp, from, to, chunk);
+    result.concat(chunkResult);
+    spinnerUpdater(chunk.length);
   }
 
-  spinner.info(chalk`Use {red.bold /${regexpStr}/g} to find keys`);
+  return result;
+};
 
-  return new RegExp(regexpStr, 'g');
+const CHUNK_COUNT = 50;
+
+const conversionWithMultiKeys = async (
+  options: IOptionValues,
+  filePaths: string[],
+) => {
+  const result: PromiseSettledResult<boolean>[] = [];
+  const { keys, dir, from, to } = options;
+  const sortedKeys = keys.sort((a, b) => b.length - a.length);
+  const keyChunks = partitionAll(CHUNK_COUNT, sortedKeys);
+  const fileChunks = partitionAll(CHUNK_COUNT, filePaths);
+  const spinnerUpdater = genSpinnerUpdater(keyChunks.length * filePaths.length);
+
+  spinnerUpdater(0);
+
+  for (const keyChunk of keyChunks) {
+    const keyRexp = new RegExp(`(${keyChunk.join('|')})`, 'g');
+
+    for (const fileChunk of fileChunks) {
+      const chunkResult = await conversionFiles(
+        dir,
+        keyRexp,
+        from,
+        to,
+        fileChunk,
+      );
+      result.concat(chunkResult);
+      spinnerUpdater(fileChunk.length);
+    }
+  }
+
+  return result;
 };
 
 // Actual main
 
 const startConversioin = async (options: IOptionValues) => {
-  const { dir, ext, keys, from, to } = options;
+  const { dir, ext, keys } = options;
   const originFilePaths: string[] = [];
-  const status = { doneCount: 0 };
-
-  const spinnerUpdater = () => {
-    status.doneCount++;
-    spinner.text = `${status.doneCount} / ${originFilePaths.length}`;
-  };
 
   for await (const filePath of getSpecificFiles(
     (filePath) => !ext || filePath.endsWith(`.${ext}`),
@@ -207,13 +295,11 @@ const startConversioin = async (options: IOptionValues) => {
   spinner.info(`${originFilePaths.length} files found.`);
   spinner.start();
 
-  const keyRexp = genKeyRexp(keys);
+  if (keys.length > 1) {
+    return await conversionWithMultiKeys(options, originFilePaths);
+  }
 
-  return await Promise.allSettled(
-    originFilePaths.map((filePath) =>
-      conversionFile(spinnerUpdater, dir, filePath, keyRexp, from, to),
-    ),
-  );
+  return await conversionWithSingleKey(options, originFilePaths);
 };
 
 const checkConversionResult = (result: PromiseSettledResult<boolean>[]) => {
