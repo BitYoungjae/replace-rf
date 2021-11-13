@@ -172,13 +172,24 @@ const conversionFile = async (
   return true;
 };
 
+const genKeyRexp = (keys: IOptionValues['keys']) => {
+  let regexpStr = keys[0];
+
+  if (keys.length > 1) {
+    const sortedKeys = keys.sort((a, b) => b.length - a.length);
+    regexpStr = `(${sortedKeys.join('|')})`;
+  }
+
+  spinner.info(chalk`Use {red.bold /${regexpStr}/g} to find keys`);
+
+  return new RegExp(regexpStr, 'g');
+};
+
 // Actual main
 
 const startConversioin = async (options: IOptionValues) => {
   const { dir, ext, keys, from, to } = options;
   const originFilePaths: string[] = [];
-  const sortedKeys = keys.sort((a, b) => b.length - a.length);
-  const keyRexp = new RegExp(`(${sortedKeys.join('|')})`, 'g');
   const status = { doneCount: 0 };
 
   const spinnerUpdater = () => {
@@ -195,6 +206,8 @@ const startConversioin = async (options: IOptionValues) => {
 
   spinner.info(`${originFilePaths.length} files found.`);
   spinner.start();
+
+  const keyRexp = genKeyRexp(keys);
 
   return await Promise.allSettled(
     originFilePaths.map((filePath) =>
