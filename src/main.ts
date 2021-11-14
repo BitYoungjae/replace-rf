@@ -10,11 +10,10 @@ import cliSpinners from 'cli-spinners';
 import { getPathNames } from 'esm-pathnames';
 
 const spinner = ora({ spinner: cliSpinners.material, stream: process.stdout });
-
 const chalkError = chalk.red.bold;
 const chalkSuccess = chalk.green;
 
-const BUFFER_PATH = path.resolve(process.cwd(), './.replace-rr');
+const BUFFER_DIR_PATH = path.resolve(process.cwd(), './.replace-rr');
 
 const checkFileExist = async (filePath: string) => {
   try {
@@ -34,8 +33,8 @@ const clearFile = async (filePath: string) => {
 };
 
 const clearBuffer = async () => {
-  if (await checkFileExist(BUFFER_PATH)) {
-    await clearFile(BUFFER_PATH);
+  if (await checkFileExist(BUFFER_DIR_PATH)) {
+    await clearFile(BUFFER_DIR_PATH);
   }
 };
 
@@ -43,26 +42,23 @@ const initBuffer = async () => {
   await clearBuffer();
 
   try {
-    await fs.mkdir(BUFFER_PATH);
+    await fs.mkdir(BUFFER_DIR_PATH);
   } catch {
-    throw new Error(`Failed to write buffer to ${BUFFER_PATH}`);
+    throw new Error(`Failed to write buffer to ${BUFFER_DIR_PATH}`);
   }
 };
 
-const writeBuffer = async (bufferPath: string, data: string) => {
-  if (!(await checkFileExist(path.dirname(bufferPath)))) {
-    await fs.mkdir(path.dirname(bufferPath), { recursive: true });
+const writeBuffer = async (bufferFilePath: string, data: string) => {
+  const bufferDirPath = path.dirname(bufferFilePath);
+
+  if (!(await checkFileExist(bufferDirPath))) {
+    await fs.mkdir(bufferDirPath, { recursive: true });
   }
 
-  return await fs.writeFile(bufferPath, data, { flag: 'w' });
+  return await fs.writeFile(bufferFilePath, data, { flag: 'w' });
 };
 
-const getBufferPath = (rootDir: string, originFilePath: string) => {
-  const relativePath = path.relative(rootDir, originFilePath);
-  return path.resolve(BUFFER_PATH, relativePath);
-};
-
-const replaceOriginWithBuffer = async (originalPath: string) => {
+const replaceOriginWithBuffer = async (originDirPath: string) => {
   try {
     // 둘 다 성능은 비슷한 것 같은데, 후자쪽이 보조디스크 낭비가 덜할 것 같았다.
     // await fs.cp(BUFFER_PATH, originalPath, {
@@ -70,9 +66,11 @@ const replaceOriginWithBuffer = async (originalPath: string) => {
     //   force: true,
     // });
 
-    for await (const filePath of getFilePaths(BUFFER_PATH)) {
-      const relativePath = path.relative(BUFFER_PATH, filePath);
-      await fs.rename(filePath, path.resolve(originalPath, relativePath));
+    for await (const bufferFilePath of getFilePaths(BUFFER_DIR_PATH)) {
+      const relativeFilePath = path.relative(BUFFER_DIR_PATH, bufferFilePath);
+      const originFilePath = path.resolve(originDirPath, relativeFilePath);
+
+      await fs.rename(bufferFilePath, originFilePath);
     }
   } catch {
     throw new Error('Failed to replace the original path with a buffer.');
@@ -155,30 +153,38 @@ program
 
 const options = program.opts<IOptionValues>();
 
-const getFileContent = async (bufferPath: string, originalFilePath: string) => {
-  let derivedFilePath: string = originalFilePath;
+const getBufferFilePath = (originDirPath: string, originFilePath: string) => {
+  const relativeFilePath = path.relative(originDirPath, originFilePath);
+  return path.resolve(BUFFER_DIR_PATH, relativeFilePath);
+};
 
-  if (await checkFileExist(bufferPath)) {
-    derivedFilePath = bufferPath;
+const getFileContent = async (
+  bufferFilePath: string,
+  originFilePath: string,
+) => {
+  let derivedFilePath: string = originFilePath;
+
+  if (await checkFileExist(bufferFilePath)) {
+    derivedFilePath = bufferFilePath;
   }
 
   return (await fs.readFile(derivedFilePath)).toString();
 };
 
 const conversionFile = async (
-  rootDir: string,
-  filePath: string,
+  originDirPath: string,
+  originFilePath: string,
   keyRexp: RegExp,
   from: IOptionValues['from'],
   to: IOptionValues['to'],
 ) => {
-  const bufferPath = getBufferPath(rootDir, filePath);
-  const fileContent = await getFileContent(bufferPath, filePath);
+  const bufferFilePath = getBufferFilePath(originDirPath, originFilePath);
+  const fileContent = await getFileContent(bufferFilePath, originFilePath);
   const conversioned = fileContent.replaceAll(keyRexp, (subStr) => {
     return subStr.replaceAll(from, to);
   });
 
-  await writeBuffer(bufferPath, conversioned);
+  await writeBuffer(bufferFilePath, conversioned);
   return true;
 };
 
@@ -199,7 +205,7 @@ const getPercent = (done: number, total: number) =>
   `${Math.round((done / total) * 100)}%`;
 
 const conversionFiles = async (
-  rootDir: string,
+  originDirPath: string,
   keyRexp: RegExp,
   from: string,
   to: string,
@@ -207,7 +213,13 @@ const conversionFiles = async (
 ) => {
   return await Promise.allSettled(
     filePaths.map(async (filePath) => {
-      const result = await conversionFile(rootDir, filePath, keyRexp, from, to);
+      const result = await conversionFile(
+        originDirPath,
+        filePath,
+        keyRexp,
+        from,
+        to,
+      );
 
       return result;
     }),
@@ -279,18 +291,27 @@ const conversionWithMultiKeys = async (
   return result;
 };
 
-// Actual main
-
-const startConversioin = async (options: IOptionValues) => {
-  const { dir, ext, keys } = options;
+const getOriginFilePaths = async (
+  originDirPath: IOptionValues['dir'],
+  ext: IOptionValues['ext'],
+) => {
   const originFilePaths: string[] = [];
 
   for await (const filePath of getSpecificFiles(
     (filePath) => !ext || filePath.endsWith(`.${ext}`),
-    dir,
+    originDirPath,
   )) {
     originFilePaths.push(filePath);
   }
+
+  return originFilePaths;
+};
+
+// Actual main
+
+const startConversioin = async (options: IOptionValues) => {
+  const { dir, ext, keys } = options;
+  const originFilePaths = await getOriginFilePaths(dir, ext);
 
   spinner.info(`${originFilePaths.length} files found.`);
   spinner.start();
@@ -317,17 +338,16 @@ const checkConversionResult = (result: PromiseSettledResult<boolean>[]) => {
 (async () => {
   try {
     await initBuffer();
-    spinner.succeed(chalkSuccess(`Buffer created at ${BUFFER_PATH}`));
+    spinner.succeed(chalkSuccess(`Buffer created at ${BUFFER_DIR_PATH}`));
 
     const result = await startConversioin(options);
 
     if (checkConversionResult(result)) {
-      await replaceOriginWithBuffer(path.resolve(options.dir));
+      await replaceOriginWithBuffer(options.dir);
       spinner.succeed(`All conversions succeed.`);
     }
   } catch (e) {
     spinner.fail(chalkError((e as Error).message));
-    console.error(e);
   }
 
   await clearBuffer();
