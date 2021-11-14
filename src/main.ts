@@ -171,19 +171,19 @@ const getFileContent = async (
 const conversionFile = async (
   originDirPath: string,
   originFilePath: string,
-  keyRexp: RegExp,
+  keyRegExp: RegExp,
   from: IOptionValues['from'],
   to: IOptionValues['to'],
 ) => {
   const bufferFilePath = getBufferFilePath(originDirPath, originFilePath);
   const fileContent = await getFileContent(bufferFilePath, originFilePath);
 
-  if (keyRexp.test(fileContent)) {
-    const conversioned = fileContent.replaceAll(keyRexp, (subStr) => {
+  if (keyRegExp.test(fileContent)) {
+    const newFileContent = fileContent.replaceAll(keyRegExp, (subStr) => {
       return subStr.replaceAll(from, to);
     });
 
-    await writeBuffer(bufferFilePath, conversioned);
+    await writeBuffer(bufferFilePath, newFileContent);
   }
 
   return true;
@@ -206,7 +206,7 @@ const getPercent = (done: number, total: number) =>
 
 const conversionFiles = async (
   originDirPath: string,
-  keyRexp: RegExp,
+  keyRegExp: RegExp,
   from: string,
   to: string,
   filePaths: string[],
@@ -216,7 +216,7 @@ const conversionFiles = async (
       const result = await conversionFile(
         originDirPath,
         filePath,
-        keyRexp,
+        keyRegExp,
         from,
         to,
       );
@@ -245,11 +245,11 @@ const conversionWithSingleKey = async (
 
   spinnerUpdater(0);
 
-  const keyRexp = new RegExp(keys[0], 'g');
+  const keyRegExp = new RegExp(keys[0], 'g');
   const fileChunks = partitionAll(CHUNK_COUNT, filePaths);
 
   for (const chunk of fileChunks) {
-    const chunkResult = await conversionFiles(dir, keyRexp, from, to, chunk);
+    const chunkResult = await conversionFiles(dir, keyRegExp, from, to, chunk);
     result.concat(chunkResult);
     spinnerUpdater(chunk.length);
   }
@@ -272,13 +272,13 @@ const conversionWithMultiKeys = async (
   spinnerUpdater(0);
 
   for (const keyChunk of keyChunks) {
-    const keyRexp = new RegExp(`(${keyChunk.join('|')})`, 'g');
+    const keyRegExp = new RegExp(`(${keyChunk.join('|')})`, 'g');
     const fileChunks = partitionAll(CHUNK_COUNT, filePaths);
 
     for (const fileChunk of fileChunks) {
       const chunkResult = await conversionFiles(
         dir,
-        keyRexp,
+        keyRegExp,
         from,
         to,
         fileChunk,
@@ -309,7 +309,7 @@ const getOriginFilePaths = async (
 
 // Actual main
 
-const startConversioin = async (options: IOptionValues) => {
+const startConversions = async (options: IOptionValues) => {
   const { dir, ext, keys } = options;
   const originFilePaths = await getOriginFilePaths(dir, ext);
 
@@ -340,7 +340,7 @@ const checkConversionResult = (result: PromiseSettledResult<boolean>[]) => {
     await initBuffer();
     spinner.succeed(chalkSuccess(`Buffer created at ${BUFFER_DIR_PATH}`));
 
-    const result = await startConversioin(options);
+    const result = await startConversions(options);
 
     if (checkConversionResult(result)) {
       await replaceOriginWithBuffer(options.dir);
