@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import fsOrigin, { Dirent, promises as fs } from 'fs';
+import fsOrigin, { promises as fs } from 'fs';
 import path from 'path';
 import process from 'process';
 import { program } from 'commander';
@@ -13,7 +13,7 @@ const spinner = ora({ spinner: cliSpinners.material, stream: process.stdout });
 const chalkError = chalk.red.bold;
 const chalkSuccess = chalk.green;
 
-const BUFFER_DIR_PATH = path.resolve(process.cwd(), './.replace-rr');
+const BUFFER_DIR_PATH = path.resolve(process.cwd(), './.replace-rf');
 
 const checkFileExist = async (filePath: string) => {
   try {
@@ -104,11 +104,10 @@ program.version(readPackageInfo().version ?? '0.0.0');
 async function* getFilePaths(targetDir: string): AsyncGenerator<string> {
   const dir = await fs.opendir(targetDir);
 
-  let curEntry: Dirent | null = null;
-  while ((curEntry = await dir.read())) {
-    const wipEntryPath = path.resolve(dir.path, curEntry.name);
+  for await (const wipEntry of dir) {
+    const wipEntryPath = path.resolve(dir.path, wipEntry.name);
 
-    if (curEntry.isDirectory()) {
+    if (wipEntry.isDirectory()) {
       for await (const subFilePath of getFilePaths(wipEntryPath)) {
         yield subFilePath;
       }
@@ -118,8 +117,6 @@ async function* getFilePaths(targetDir: string): AsyncGenerator<string> {
 
     yield wipEntryPath;
   }
-
-  await dir.close();
 }
 
 async function* getSpecificFiles(
@@ -180,26 +177,29 @@ const conversionFile = async (
 ) => {
   const bufferFilePath = getBufferFilePath(originDirPath, originFilePath);
   const fileContent = await getFileContent(bufferFilePath, originFilePath);
-  const conversioned = fileContent.replaceAll(keyRexp, (subStr) => {
-    return subStr.replaceAll(from, to);
-  });
 
-  await writeBuffer(bufferFilePath, conversioned);
+  if (keyRexp.test(fileContent)) {
+    const conversioned = fileContent.replaceAll(keyRexp, (subStr) => {
+      return subStr.replaceAll(from, to);
+    });
+
+    await writeBuffer(bufferFilePath, conversioned);
+  }
+
   return true;
 };
 
-const partitionAll = <T>(n: number, coll: T[]): T[][] => {
+function* partitionAll<T>(n: number, coll: T[]): Generator<T[]> {
   if (n <= 0) {
-    throw new Error('invalid agument:' + n);
+    return [];
   }
-  const result: T[][] = [];
-  let target = coll;
-  while (target.length > 0) {
-    result.push(target.slice(0, n));
-    target = target.slice(n);
+
+  let rest = coll;
+  while (rest.length > 0) {
+    yield rest.slice(0, n);
+    rest = rest.slice(n);
   }
-  return result;
-};
+}
 
 const getPercent = (done: number, total: number) =>
   `${Math.round((done / total) * 100)}%`;
@@ -266,14 +266,14 @@ const conversionWithMultiKeys = async (
   const result: PromiseSettledResult<boolean>[] = [];
   const { keys, dir, from, to } = options;
   const sortedKeys = keys.sort((a, b) => b.length - a.length);
-  const keyChunks = partitionAll(CHUNK_COUNT, sortedKeys);
-  const fileChunks = partitionAll(CHUNK_COUNT, filePaths);
+  const keyChunks = [...partitionAll(CHUNK_COUNT, sortedKeys)];
   const spinnerUpdater = genSpinnerUpdater(keyChunks.length * filePaths.length);
 
   spinnerUpdater(0);
 
   for (const keyChunk of keyChunks) {
     const keyRexp = new RegExp(`(${keyChunk.join('|')})`, 'g');
+    const fileChunks = partitionAll(CHUNK_COUNT, filePaths);
 
     for (const fileChunk of fileChunks) {
       const chunkResult = await conversionFiles(
